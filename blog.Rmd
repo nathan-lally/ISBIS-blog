@@ -1,0 +1,54 @@
+---
+title: "Modern Methods for Insurance IBNR Reserve Estimation"
+author: "Nathan Lally: Sr. Machine Learning Modeler @ Hartford Steam Boiler (Munich Re)"
+date: "5/13/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, error=FALSE, message=FALSE)
+```
+
+Insurance is one of the few industries where the cost of the product is not known when it is priced for sale. To determine the rate for a policy, the insurer must predict the future claims from that policy. To predict those future claims, insurers use past claims from similar policies. Ideally, the most recently written policies will closely match the future policies and should be prominently included in the model. Unfortunately, the total cost of a policy is not known immediately after policy expiration. Reporting lags, litigation, settlement negotiation, and other adjustments to the ultimate claims can all lengthen the time until the ultimate cost of the policy is known. 
+
+Loss reserves represent the insurer's best estimate of their outstanding loss payments. These reserves include both incurred, but not reported (IBNR) losses (losses incurred by the policyholder during the policy period, but not yet reported to the insurer as of the valuation date) and incurred, but not enough reported (IBNER) losses (the insurer knows about these losses, but the predicted ultimate costs as of the valuation date are often smaller than the actual ultimate losses). Properly estimating these ultimate losses is important for future pricing and company valuation and has been a rich subject of investigation for actuaries and statisticians.
+
+Traditional actuarial reserve estimation involves aggregating policies and their associated claims payments into cohorts by the time periods in which claims were initially incurred (the accident period), and the subsequent time periods in which payments were made on those claims (the development period). This data is often organized in a spreadsheet with accident periods forming the rows and development periods forming the columns into what is known as the reserve triangle. An example triangle using publicly available [NAIC Schedule P data](https://www.casact.org/research/index.cfm?fa=loss_reserves_data) from 1988-1997 can be seen below. All loss values are in USD.
+
+```{r tri1}
+#### load packages ####
+library(data.table)
+library(tidyverse)
+library(kableExtra)
+
+#### load data & setup ####
+setwd("~/Dropbox/GP_Reserving/GPResdemo")
+wc <- read_csv("statefarmWC.csv") 
+wcwide1 <- wc %>% # upper triangle
+  mutate(CLOSSUP = ifelse(UpperTri==1, CLOSS, "")) %>% 
+  dcast(formula = AY~Dlag, value.var = "CLOSSUP")
+wcwide2 <- dcast(data=wc, formula = AY~Dlag, value.var = "CLOSS") # complete data
+
+#### show triangle for wc ###
+kable(wcwide1, caption="State Farm Worker's Compensation Loss Triangle") %>% 
+  kable_styling()
+```
+
+
+The losses in the table above are cumulative in the development period (year) dimension and our task as actuaries or statisticians (in this case at the end of 1997) is to fill in the lower-right half of the triangle with the goal of obtaining estimates for "ultimate" losses for each accident period cohort. In this case ultimate losses are represented by values in the 10<sup>th</sup> development period and their sum provides an estimate for IBNR reserves. The table below contains the actual observed ultimate losses for this historical data set that would have been the subject of estimation.
+
+```{r tri2}
+kable(wcwide2, caption="State Farm Worker's Compensation Loss Triangle with Ultimates") %>% 
+  kable_styling()
+```
+
+Traditional actuarial IBNR reserve estimation techniques are deterministic and mainly revolve around the estimation of so-called "link ratios" (growth rates between subsequent development periods). These methods often have a subjective, judgement-based, element to the estimation where actuaries make "selections" to choose/tweak model parameters until they, and the ultimate projections, appear reasonable and in accords with prior beliefs. Traditional actuarial methods provide no means to assess uncertainty around reserve projections, do not enable methodologically consistent interpolation between time periods or extrapolation beyond the observed triangle, and often are inaccurate for lines of business that are volatile or dynamic with time. Though far less frequently applied in practice, many statistical reserving techniques exist that seek to mitigate at least some of these problems. 
+
+In the literature today, the majority of statistical reserving models are simply heavily parameterized analogues to traditional actuarial methods; a troublesome trend for a problem notorious for having limited degrees of freedom. However, several recent papers proposing more novel, parsimonious, and interesting models have received traction in academia and industry alike. Stelljes (2006, CAS Forum) models incremental losses with exponential curves, Guszcza (2008, CAS Forum) and later Zhang, Dukic, and Guszcza (2012, Journal of the Royal Statistical Society) model cumulative losses with parametric growth curves using MLE in the former and hierarchical Bayesian methods with auto-correlated errors in the latter paper. Though less popular than their parametric counterparts discussed above, nonparametric nonlinear regressions have also been employed in the literature. England and Verrall (2002, British Actuarial Journal) introduce generalized additive models (GAM) with cubic regression splines as a method for reserve forecasting. Spedicato, Clemente, and Schewe (2012, CAS Forum) use generalized additive models for location, scale and shape (GAMLSS) to model the conditional scale parameter as well as the location parameter for a variety of distributions but note substantial problems with model convergence and lack of accurate predictions in some settings.
+
+
+Borrowing inspiration from the field of spatial/spatiotemporal statistics and taking the perspective that the loss triangle can be viewed as a spatially organized data set, my collaborator Brian Hartman and I contribute to the literature on nonparametric reserve forecasting techniques by estimating ultimate reserves using hierarchical Bayesian Gaussian process (GP) regression with input warping (2018, Insurance Mathematics & Economics). Our approach accommodates the dependency structure between loss observations along both loss triangle dimensions, considers potential non-stationarity of the loss development process along each dimension, and is more parsimonious than many models currently in the literature. Using MCMC also allows us to sample directly from the predictive distribution of ultimate losses and to obtain credible intervals around this quantity. Our results show that our proposed method outperforms traditional actuarial chain-ladder methods as well as the hierarchical growth curve methods of Guszcza on several publicly available data sets. Unfortunately, we were unable to replicate results from some of the GAM/GAMLSS model specifications (we too experienced convergence issues) mentioned in this posting on all of our data sets and exclude them from comparison for the time being.
+
+It was our intent to introduce our spatial interpretation of loss reserving, GP regression, and other concepts from Bayesian machine learning to actuarial literature with the hope that others would experiment with similar approaches and extend our results. Indeed, such research is already being pursued. In his 2019 master's thesis from the University of Twente, Patrick Ruitenberg improves upon our methods by incorporating premium information (modeling loss ratios), and information from Bornheutter-Ferguson estimation. Patrick also performs a valuable sensitivity analysis for hyperparameter selection. Our own future research on this topic will focus on borrowing strengths across multiple reserve triangles (perhaps using multi-task learning), non-Gaussian data models, and experimenting with new covariance functions. 
+
+
